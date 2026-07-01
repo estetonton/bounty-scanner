@@ -4,7 +4,14 @@ const path = require('path');
 
 const TOKEN = process.env.GH_TOKEN;
 const SEEN_FILE = path.join(__dirname, 'seen.json');
+const LOG_FILE = path.join(__dirname, 'bounties.log');
 const POLL_INTERVAL = 5 * 60 * 1000;
+
+function log(msg) {
+  const line = `[${new Date().toISOString()}] ${msg}`;
+  console.log(line);
+  fs.appendFileSync(LOG_FILE, line + '\n');
+}
 
 let seen = new Set();
 if (fs.existsSync(SEEN_FILE)) {
@@ -66,7 +73,7 @@ function isJokeIssue(title, body) {
 
 async function scan() {
   try {
-    console.log(`\n[${new Date().toISOString()}] Scanning for new bounty issues...`);
+    log('Scanning for new bounty issues...');
 
     const queries = [
       'label:bounty is:issue is:open sort:created-desc',
@@ -90,34 +97,35 @@ async function scan() {
         const bounty = parseBountyAmount(issue.title, issue.body);
         const joke = isJokeIssue(issue.title, issue.body);
 
+        const repo = issue.repository_url.split('/').slice(-2).join('/');
+        const value = bounty ? `$${bounty.usdEstimate}${joke ? ' (joke)' : ''}` : 'unknown';
+        const priority = bounty && bounty.usdEstimate >= 10 && !joke ? ' ★ HIGH PRIORITY' : '';
+
+        log(`NEW: ${issue.title}`);
+        log(`Repo: ${repo} | Value: ${value}${priority}`);
+        log(`URL: ${issue.html_url}`);
+
         console.log(`\n${'='.repeat(60)}`);
         console.log(`NEW BOUNTY: ${issue.title}`);
-        console.log(`Repo: ${issue.repository_url.split('/').slice(-2).join('/')}`);
+        console.log(`Repo: ${repo}`);
         console.log(`URL: ${issue.html_url}`);
         console.log(`Created: ${issue.created_at}`);
-        if (bounty) {
-          console.log(`Value: $${bounty.usdEstimate}${joke ? ' (likely joke)' : ''}`);
-        } else {
-          console.log(`Value: unknown`);
-        }
-        if (bounty && bounty.usdEstimate >= 10 && !joke) {
-          console.log(`*** HIGH PRIORITY - WORTH PURSUING ***`);
-        }
+        console.log(`Value: ${value}${priority}`);
         console.log(`Labels: ${issue.labels.map(l => l.name).join(', ')}`);
       }
     }
 
     saveSeen();
 
-    const newCount = seenInScan.size;
-    console.log(`\n[${new Date().toISOString()}] Tracked ${seen.size} total issues. Last scan: ${allIssues.length} issues.`);
+    log(`Tracked ${seen.size} total issues. Last scan: ${allIssues.length} issues.`);
 
   } catch (err) {
     console.error(`[${new Date().toISOString()}] Scan error: ${err.message}`);
   }
 }
 
-console.log('=== Bounty Scanner ===');
-console.log(`Polling every ${POLL_INTERVAL / 1000}s. PID: ${process.pid}`);
+log('=== Bounty Scanner Started ===');
+log(`Polling every ${POLL_INTERVAL / 1000}s. PID: ${process.pid}`);
+log(`Log file: ${LOG_FILE}`);
 scan();
 setInterval(scan, POLL_INTERVAL);
